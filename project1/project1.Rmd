@@ -1,0 +1,160 @@
+---
+title: "Project1"
+author: "Yan"
+date: "3/13/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+This assignment makes use of data from a personal activity monitoring device. This device collects data at 5 minute intervals through out the day. The data consists of two months of data from an anonymous individual collected during the months of October and November, 2012 and include the number of steps taken in 5 minute intervals each day.
+
+Requirements:
+
+1. [x] Code for reading in the dataset and/or processing the data 
+
+2. [x] Histogram of the total number of steps taken each day
+
+3. [x] Mean and median number of steps taken each day
+
+4. [x] Time series plot of the average number of steps taken
+
+5. [x] The 5-minute interval that, on average, contains the maximum number of steps
+
+6. [x] Code to describe and show a strategy for imputing missing data
+
+7. [x] Histogram of the total number of steps taken each day after missing values are imputed
+
+8. [x] Panel plot comparing the average number of steps taken per 5-minute interval across weekdays and weekends 
+
+9. [x] All of the R code needed to reproduce the results (numbers, plots, etc.) in the report
+
+# Get data from website
+
+```{r getdata}
+setwd("~/GoogleDrive/workshop/Data Science Specialization/05_Reproducible Research/project1/")
+fname="ActivityMonitorData.zip"
+furl<-"https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2Factivity.zip"
+if(!file.exists(fname)){download.file(furl,fname)}
+unzip(fname)
+list.files(recursive = TRUE)
+```
+
+# read data 
+
+The variables included in this dataset are:
+
+-steps: Number of steps taking in a 5-minute interval (missing values are coded as ) 
+-date: The date on which the measurement was taken in YYYY-MM-DD format 
+-interval: Identi er for the 5-minute interval in which measurement was taken
+
+The dataset is stored in a comma-separated-value (CSV) and there are a total of 17,568 observations in this dataset.
+
+
+```{r readdata}
+act<-read.csv("activity.csv")
+str(act)
+act$date<-as.Date(act$date)
+str(act)
+```
+
+
+# Histogram of the total number of steps taken each day
+
+```{r stepperday}
+library(dplyr)
+actday<-group_by(act,date)
+daystep<-summarise(actday,daystep=sum(steps))
+str(daystep)
+hist(daystep$daystep,main = "Histogram of number of steps per day",xlab="Steps per day")
+```
+
+
+# Mean and median number of steps taken each day
+
+```{r meanstep}
+meanstep<-mean(daystep$daystep,na.rm = TRUE)
+medianstep<-median(daystep$daystep,na.rm=TRUE)
+meanstep
+medianstep
+```
+
+
+
+# Time series plot of the average number of steps taken
+
+```{r plotstep}
+#timehm<-paste(act$interval%/%60,act$interval%%60)
+#head(timehm)
+#library(lubridate)
+#act$timedhm<-ymd_hm(paste(act$date,timehm))
+#head(act)
+#plot(act$timedhm,act$steps,type="l")
+#plot(daystep$date,daystep$daystep,type="p",xlab="Date",ylab="Steps per day")
+```
+
+**Is the question want to average the step at same intervals?
+
+```{r avgstep}
+actinterval<-group_by(act,interval)
+intervalstep<-summarise(actinterval,meaninterval=mean(steps,na.rm = TRUE))
+plot(intervalstep$interval,intervalstep$meaninterval,type="l",xlab = "Time interval", ylab="Average number of steps")
+```
+
+# The 5-minute interval that, on average, contains the maximum number of steps
+
+```{r maxinterval}
+arrange(act,desc(steps))[1,]
+
+```
+
+
+# describe and show a strategy for imputing missing data
+
+Use the average value as missing data at same interval
+
+```{r imputmis}
+table(is.na(act$steps))
+library(VIM)
+library(mice)
+mice_plot<-aggr(act, col=c('navyblue','yellow'),
+                    numbers=TRUE, sortVars=TRUE,
+                    labels=names(act), cex.axis=.7,
+                    gap=3, ylab=c("Missing data","Pattern"))
+class(actinterval)
+# returns error complaining x not numeric if using the whole data set including date column
+imputed_Data <- mice(act[,c("steps","interval")], method = 'pmm', seed = 500)
+summary(imputed_Data)
+actcomp<-complete(imputed_Data,2)
+
+```
+
+
+# Histogram of the total number of steps taken each day after missing values are imputed
+
+```{r stepperday2}
+actcomp2<-cbind(actcomp,"date"=act$date)
+head(actcomp2)
+actday2<-group_by(actcomp2,date)
+daystep2<-summarise(actday2,daystep=sum(steps))
+str(daystep2)
+hist(daystep2$daystep,main = "Histogram of number of steps per day after imputing missing data",xlab="Steps per day")
+```
+
+
+# Panel plot comparing the average number of steps taken per 5-minute interval across weekdays and weekends 
+
+```{r avgstep2}
+actcomp2$iswend<-(wday(actcomp2$date)==1|wday(actcomp2$date)==7)
+actinterval2<-group_by(actcomp2,interval,iswend)
+intervalstep2<-summarise(actinterval2,meaninterval=mean(steps,na.rm = TRUE))
+library(ggplot2)
+qplot(interval,meaninterval,data=intervalstep2,facets=.~iswend, geom = "path")
+```
+
+
+
+
+

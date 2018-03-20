@@ -1,0 +1,268 @@
+---
+title: "Reproducible Research Project2"
+author: "Yan"
+date: "3/15/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# The most severe weather events that affect public health and economic in the United States
+
+## Synopsis  
+This project is about the health and economic problems caused by storms. The downloaded data needs to be cleaned following the instruction of the documentation. Group the dataset according to different event type and find out the type that has the largest damage to public health including fatalities and injuries, as well as economic impact including properties and crops.   
+
+### Introduction  
+Storms and other severe weather events can cause both public health and economic problems for
+communities and municipalities. Many severe events can result in fatalities, injuries, and 
+property damage, and preventing such outcomes to the extent possible is a key concern.  
+
+This project involves exploring the U.S. National Oceanic and Atmospheric Administration's (NOAA) 
+storm database. This database tracks characteristics of major storms and weather events in the 
+United States, including when and where they occur, as well as estimates of any fatalities, 
+injuries, and property damage.  
+
+
+### Data  
+The data for this assignment come in the form of a comma-separated-value compressed file via 
+the bzip2 algorithm to reduce its size. You can download the file from the course web site:  
+* [Storm Data](https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2) [47Mb]  
+
+There is also some documentation of the database available. Here you will find how some of 
+the variables are constructed/defined.  
+* National Weather Service [Storm Data Documentation](https://d396qusza40orc.cloudfront.net/repdata%2Fpeer2_doc%2Fpd01016005curr.pdf)  
+* National Climatic Data Center Storm Events  [FAQ](https://d396qusza40orc.cloudfront.net/repdata%2Fpeer2_doc%2FNCDC%20Storm%20Events-FAQ%20Page.pdf)  
+
+The events in the database start in the year 1950 and end in November 2011. In the earlier 
+years of the database there are generally fewer events recorded, most likely due to a lack 
+of good records. More recent years should be considered more complete. 
+
+
+### Questions  
+
+The basic goal of this assignment is to explore the NOAA Storm Database and answer some basic 
+questions about severe weather events. You must use the database to answer the questions below 
+and show the code for your entire analysis. Your analysis can consist of tables, figures, or 
+other summaries. You may use any R package you want to support your analysis.  
+
+**Your data analysis must address the following questions:**  
+
+1. Across the United States, which types of events (as indicated in the *EVTYPE* variable) are 
+most harmful with respect to population health?  
+
+2. Across the United States, which types of events have the greatest economic consequences?  
+
+Consider writing your report as if it were to be read by a government or municipal manager 
+who might be responsible for preparing for severe weather events and will need to prioritize 
+resources for different types of events. However, there is no need to make any specific 
+recommendations in your report.
+
+
+#### Requirement(tools)  
+* Rstudio
+* knitr
+
+```{r loadpackage}
+library(dplyr)
+library(ggplot2)
+```
+
+## Data Processing
+
+### set directory and download data from web  
+
+```{r getdata}
+setwd("~/GoogleDrive/workshop/Data Science Specialization/05_Reproducible Research/project2/")
+fname<-"stormdata.csv.bz2"
+furl<-"https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2"
+fname2<-"stormdatadoc.pdf"
+furl2<-"https://d396qusza40orc.cloudfront.net/repdata%2Fpeer2_doc%2Fpd01016005curr.pdf"
+fname3<-"stormdatafaq.pdf"
+furl3<-"https://d396qusza40orc.cloudfront.net/repdata%2Fpeer2_doc%2FNCDC%20Storm%20Events-FAQ%20Page.pdf"
+if(!file.exists(fname)){download.file(furl,fname)}
+if(!file.exists(fname2)){download.file(furl2,fname2)}
+if(!file.exists(fname3)){download.file(furl3,fname3)}
+list.files(recursive = TRUE)
+```
+
+### read data and check data structure  
+
+```{r readcsv}
+storm<-read.csv(fname,na.strings = "")
+str(storm)
+```
+
+
+### select effective rows and columns 
+Some lines in between is not correct record, remove those based on the "STATE" column  
+compare with state.abb data in R  
+
+```{r selectrow}
+storm<-tbl_df(storm)
+sstorm<- storm %>%
+  filter(STATE %in% state.abb) %>%
+  select(EVTYPE,FATALITIES,INJURIES,PROPDMG,PROPDMGEXP,CROPDMG,CROPDMGEXP) %>%
+  print
+summary(sstorm)
+```
+
+### clean data  
+
+#### change string to all upper case  
+
+```{r toupper}
+sstorm$EVTYPE<-toupper(sstorm$EVTYPE)
+sstorm$PROPDMGEXP<-toupper(sstorm$PROPDMGEXP)
+sstorm$CROPDMGEXP<-toupper(sstorm$CROPDMGEXP)
+summary(sstorm)
+```
+
+#### calculate exponential , build function
+
+Note: *if* function is not vectorized, use *ifelse* instead  
+
+```{r exptovalue}
+exptovalue <- function(x) {
+  ifelse(x=="B",1e9, ifelse(x=="M",1e6, ifelse(x=="K",1e3,1)))
+}
+nazero <- function(x) {
+  ifelse(is.na(x),0,x)
+}
+```
+
+```{r getdmgvalue}
+sstorm <- sstorm %>%
+  mutate(proploss=PROPDMG*exptovalue(PROPDMGEXP)) %>%
+  mutate(croploss=CROPDMG*exptovalue(CROPDMGEXP)) %>%
+  mutate(totalloss=nazero(proploss)+nazero(croploss)) %>%
+  select(-PROPDMG,-PROPDMGEXP,-CROPDMG,-CROPDMGEXP) %>%
+  print
+```
+Calculate the damage value for property and crop respectively, then add two items together.  
+Remove the original damage data columns.  
+
+
+#### modify event type
+
+```{r cleanevent}
+length(unique(sstorm$EVTYPE))
+sstorm$event<-gsub("[[:blank:][:punct:]+]"," ",sstorm$EVTYPE)
+sstorm$event<-gsub("TSTM|^THUNDERSTORM.*","THUNDERSTORM",sstorm$event)
+sstorm$event<-gsub("WINDS|WND","WIND",sstorm$event)
+sstorm$event<-gsub("FLOODS","FLOOD",sstorm$event)
+sstorm$event<-gsub("^TORN.*","TORNADO",sstorm$event)
+sstorm$event<-gsub("^HURRICANE.*","HURRICANE",sstorm$event)
+sstorm$event<-gsub("[0-9.]| MPH| TO| AND|[[:blank:]][A-Z][[:blank:]]|^ ","",sstorm$event)
+sstorm$event<-gsub("SUMMARY*|NONE",NA,sstorm$event)
+
+length(unique(sstorm$event))
+str(sstorm)
+#unique(sstorm$event)
+```
+
+Note: *EVTYPE* is quite messy, more efforts are needed in order to get clean data, not done here...  
+See page 6 Table 2.1.1 for details of event type (National Weather Service [Storm Data Documentation](https://d396qusza40orc.cloudfront.net/repdata%2Fpeer2_doc%2Fpd01016005curr.pdf))
+
+
+## Results
+
+   
+Across the United States, which types of events (as indicated in the *EVTYPE* variable) are most harmful with respect to population health / economic consequences?  
+
+In this dataset, there are two columns related to population health: *FATALITIES*, *INJURIES*;  
+two ITEMS related to economic consequencies: *PROPDMG(EXP)*, *CROPDMG(EXP)*
+
+```{r groupbyevent}
+sstorm_gp<- sstorm %>%
+  select(-EVTYPE) %>%
+  group_by(event) %>%
+  summarise(fatality=sum(FATALITIES),
+            injury=sum(INJURIES,na.rm = TRUE),
+            propdmg=sum(proploss,na.rm = TRUE),
+            cropdmg=sum(croploss,na.rm = TRUE),
+            ecodmg=sum(totalloss,na.rm = TRUE)) %>%
+  print
+```
+
+```{r topfatality}
+topfatality<-arrange(sstorm_gp,desc(fatality))
+topfatality
+```
+
+
+```{r topinjury}
+topinjury<-arrange(sstorm_gp,desc(injury))
+topinjury
+```
+
+
+```{r toppropdmg}
+toppropdmg<-arrange(sstorm_gp,desc(propdmg))
+toppropdmg
+```
+
+
+```{r topcropdmg}
+topcropdmg<-arrange(sstorm_gp,desc(cropdmg))
+topcropdmg
+```
+
+
+```{r topecodmg}
+topecodmg<-arrange(sstorm_gp,desc(ecodmg))
+topecodmg
+```
+
+
+An easy way to look at the table:  
+```{r view}
+View(topfatality)
+```
+
+
+Based on current results, TORNADO has caused most fatalities and injuries. For economic consequeses, FLOOD has caused greatest property damage while DROUGHT has caused the greatest crop damage.
+
+```{r plotresult1}
+g1<-ggplot(head(topfatality,10),aes(reorder(event,fatality),fatality))
+plot1<-g1+geom_bar(stat = "identity")+xlab("Event type")+ylab("Total Number of fatalities")+coord_flip()
+plot1
+```
+
+```{r plotresult2}
+g2<-ggplot(head(topinjury,10),aes(reorder(event,injury),injury))
+plot2<-g2+geom_bar(stat = "identity")+xlab("Event type")+ylab("Total Number of injuries")+coord_flip()
+plot2
+```
+
+```{r plotresult3}
+g1<-ggplot(head(topecodmg,10),aes(reorder(event,ecodmg),ecodmg))
+plot1<-g1+geom_bar(stat = "identity")+xlab("Event type")+ylab("Total economic damage (dollar)")+coord_flip()
+plot1
+```
+
+
+
+#### Review criteria (self review)
+1. [x] Has either a (1) valid RPubs URL pointing to a data analysis document for this assignment been submitted; or (2) a complete PDF file presenting the data analysis been uploaded?  
+2. [x] Is the document written in English?  
+3. [x] Does the analysis include description and justification for any data transformations?  
+4. [x] Does the document have a title that briefly summarizes the data analysis?  
+5. [x] Does the document have a synopsis that describes and summarizes the data analysis in less than 10 sentences?  
+6. [x] Is there a section titled "Data Processing" that describes how the data were loaded into R and processed for analysis?  
+7. [x] Is there a section titled "Results" where the main results are presented?  
+8. [x] Is there at least one  figure in the document that contains a plot?  
+9. [x] Are there at most 3  figures in this document?  
+10. [x] Does the analysis start from the raw data file (i.e. the original .csv.bz2 file)?  
+11. [x] Does the analysis address the question of which types of events are most harmful to population health?  
+12. [x] Does the analysis address the question of which types of events have the greatest economic consequences?  
+13. [x] Do all the results of the analysis (i.e.figures, tables, numerical summaries) appear to be reproducible?  
+14. [x] Do the figure(s) have descriptive captions (i.e. there is a description near the figure of what is happening in the  figure)?  
+15. [x] As far as you can determine, does it appear that the work submitted for this project is the work of the student who submitted it?  
+
+
+
+
+
+
